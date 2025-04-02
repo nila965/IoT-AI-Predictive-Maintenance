@@ -109,3 +109,7 @@ if sensor_data:
     st.experimental_rerun()
 else:
     st.error("❌ Unable to fetch real-time sensor data. Please check your ThingSpeak channel.")
+
+# Auto-refresh every 15 seconds
+time.sleep(15)
+st.rerun()  # Updated from st.experimental_rerun()
