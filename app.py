@@ -1,4 +1,3 @@
-# app.py
 import streamlit as st
 import pandas as pd
 import requests
@@ -6,36 +5,22 @@ import joblib
 import time
 import plotly.express as px
 
-# ThingSpeak Configuration
-CHANNEL_ID = "2890659"  # 🔹 Your ThingSpeak Channel ID
-READ_API_KEY = "44SV31POUHPOVJ0M"  # 🔹 Your ThingSpeak Read API Key
-THINGSPEAK_URL = f"https://api.thingspeak.com/channels/{CHANNEL_ID}/feeds.json?api_key={READ_API_KEY}&results=1"
 
-
-# Load trained model
+# Load trained AI model
 def load_model():
     return joblib.load("predictive_maintenance_model.pkl")
 
 
-# Safe Thresholds for Good Condition
-SAFE_RANGES = {
-    "Temperature": (20, 40),
-    "Humidity": (30, 80),
-    "Hall Effect": (0, 1),
-    "Sound": (20, 200),
-    "Current": (0, 500),
-    "Gas": (0, 500),
-    "Flame": (0, 1),
-    "Relay Status": (0, 1),
-}
-
-
 # Fetch real-time data from ThingSpeak
 def fetch_data():
+    CHANNEL_ID = "2890659"  # Replace with your ThingSpeak Channel ID
+    READ_API_KEY = "44SV31POUHPOVJ0M"  # Replace with your Read API Key
+    url = f"https://api.thingspeak.com/channels/{CHANNEL_ID}/feeds.json?api_key={READ_API_KEY}&results=1"
+
     try:
-        response = requests.get(THINGSPEAK_URL)
-        response.raise_for_status()  # Raise an error for HTTP issues
-        data = response.json()  # Parse JSON
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
 
         if "feeds" not in data or not data["feeds"]:
             st.warning("⚠️ No real-time data available from ThingSpeak")
@@ -59,25 +44,32 @@ def fetch_data():
         return None
 
 
-# Predict maintenance status
-def predict_maintenance(data, model):
-    # Check if sensor values are within safe limits
-    safe_condition = all(SAFE_RANGES[key][0] <= data[key] <= SAFE_RANGES[key][1] for key in SAFE_RANGES)
+# Predict maintenance status based on sensor values
+def predict_maintenance(sensor, value):
+    # Define thresholds
+    thresholds = {
+        "Temperature": (20, 45),
+        "Humidity": (25, 80),
+        "Hall Effect": (0, 0),
+        "Sound": (0, 95),
+        "Current": (0, 7),
+        "Gas": (0, 500),
+        "Flame": (0, 0),
+        "Relay Status": (0, 0)
+    }
 
-    if safe_condition:
-        return "🟢 Good Condition"
+    min_val, max_val = thresholds.get(sensor, (0, 100))
 
-    # Else, use AI Model for prediction
-    df = pd.DataFrame([data])
-    prediction = model.predict(df)[0]
+    # Check if value is within the range
+    if not (min_val <= value <= max_val):
+        return f"⚠️ {sensor} Out of Range - Maintenance Required"
 
-    return "🔴 Maintenance Required" if prediction == 1 else "🟢 Good Condition"
+    return "🟢 Good Condition - No Maintenance Needed"
 
 
-# Streamlit App UI
+# Streamlit UI
 st.set_page_config(page_title="IoT Predictive Maintenance", layout="wide")
-st.title("IoT Predictive Maintenance")
-st.sidebar.header("Sensor Data")
+st.title("IoT Predictive Maintenance Dashboard")
 
 # Load AI Model
 model = load_model()
@@ -86,30 +78,27 @@ model = load_model()
 sensor_data = fetch_data()
 
 if sensor_data:
-    # Sidebar Sensor Inputs
-    selected_sensor = st.sidebar.selectbox("Select Sensor", list(sensor_data.keys()))
+    # Create tabs for each sensor
+    tabs = st.tabs(list(sensor_data.keys()))
 
-    # Display Sensor Data
-    st.sidebar.write(f"**{selected_sensor} Value:** {sensor_data[selected_sensor]}")
+    for i, sensor in enumerate(sensor_data.keys()):
+        with tabs[i]:
+            st.subheader(f"{sensor} Sensor")
+            st.write(f"**Current Value:** {sensor_data[sensor]}")
 
-    # Data Visualization
-    st.subheader(f"{selected_sensor} Data Visualization")
-    fig = px.bar(x=[selected_sensor], y=[sensor_data[selected_sensor]], labels={"x": "Sensor", "y": "Value"},
-                 title=f"{selected_sensor} Value", height=400)
-    st.plotly_chart(fig, use_container_width=True)
+            # Show sensor value visualization
+            fig = px.bar(x=[sensor], y=[sensor_data[sensor]], labels={"x": "Sensor", "y": "Value"},
+                         title=f"{sensor} Value", height=400)
+            st.plotly_chart(fig, use_container_width=True)
 
-    # AI Prediction
-    st.subheader("AI Prediction for Maintenance")
-    prediction_result = predict_maintenance(sensor_data, model)
-    st.markdown(f"<h2 style='color: {'red' if '🔴' in prediction_result else 'green'}'>{prediction_result}</h2>",
+            # Predict maintenance status for this sensor
+            prediction_result = predict_maintenance(sensor, sensor_data[sensor])
+            st.markdown(
+                f"<h2 style='color: {'red' if '⚠️' in prediction_result else 'green'}'>{prediction_result}</h2>",
                 unsafe_allow_html=True)
 
     # Auto-refresh every 15 seconds
     time.sleep(15)
-    st.experimental_rerun()
+    st.rerun()
 else:
     st.error("❌ Unable to fetch real-time sensor data. Please check your ThingSpeak channel.")
-
-# Auto-refresh every 15 seconds
-time.sleep(15)
-st.rerun()  # Updated from st.experimental_rerun()
